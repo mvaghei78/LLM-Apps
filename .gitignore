@@ -1,0 +1,4 @@
+.vscode
+jupyter_notebooks/wandb
+wandb
+web_app/__pycache__
