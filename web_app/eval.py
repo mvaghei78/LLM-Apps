@@ -28,11 +28,12 @@ def load_eval_dataset(config: SimpleNamespace) -> pd.DataFrame:
     eval_dataset = pd.read_csv(artifact_dir / 'generated_examples.csv')
     return eval_dataset
 
-def generate_answers(eval_dataset: pd.DataFrame, qa_chain: ConversationalRetrievalChain) -> pd.DataFrame:
+def generate_answers(eval_dataset: pd.DataFrame, qa_chain: ConversationalRetrievalChain, results_dir: str) -> pd.DataFrame:
     """Generate answers for a dataset of questions and answers
     Args:
         eval_dataset (pd.DataFrame): A dataframe of questions and answers
         qa_chain (ConversationalRetrievalChain): A ConversationalRetrievalChain object
+        results_dir (str): The directory that we use to store our output results
     Returns:
         pd.DataFrame: A dataframe of questions, answers, and model answers
     """
@@ -42,7 +43,7 @@ def generate_answers(eval_dataset: pd.DataFrame, qa_chain: ConversationalRetriev
         answers.append(result['answer'])
 
     eval_dataset['model_answer'] = answers
-    eval_dataset.to_csv('eval_with_answers.csv', index=False)
+    eval_dataset.to_csv(results_dir+'/eval_with_answers.csv', index=False)
     return eval_dataset
 
 def evaluate_answers(eval_dataset: pd.DataFrame, config: SimpleNamespace) -> pd.DataFrame:
@@ -87,26 +88,30 @@ def evaluate_answers(eval_dataset: pd.DataFrame, config: SimpleNamespace) -> pd.
 
     return eval_dataset
 
-def log_results(eval_dataset: pd.DataFrame) -> None:
+def log_results(eval_dataset: pd.DataFrame, results_dir: str) -> None:
     """Log evaluation results to a Weights & Biases Artifact
     Args:
         eval_dataset (pd.DataFrame): A dataframe of questions, answers, model_answers, and model scores
+        results_dir (str): The directory that we use to store our output results
     """
     model_accuracy = len(eval_dataset[eval_dataset['model_score'] == 'CORRECT']) / len(eval_dataset)
     wandb.log({'model_accuracy': model_accuracy})
-    eval_dataset.to_csv('eval_results.csv', index=False)
+    eval_dataset.to_csv(results_dir+'/eval_results.csv', index=False)
     artifact = wandb.Artifact('eval_results', type='eval_results')
-    artifact.add_file('eval_results.csv')
+    artifact.add_file(results_dir+'/eval_results.csv')
     wandb.log_artifact(artifact)
     wandb.log({'eval_results': wandb.Table(dataframe=eval_dataset)})
 
 if __name__ == '__main__':
+    results_dir = '../result'
+    if not os.path.isdir(results_dir):
+        os.makedirs(results_dir)
     with wandb.init(project=default_config.project, config=default_config, job_type='eval') as run:
         eval_dataset = load_eval_dataset(default_config)
         vector_store = load_vector_store(run, os.environ['OPENAI_API_KEY'])
         qa_chain = load_chain(run, vector_store, os.environ['OPENAI_API_KEY'])
         eval_dataset = generate_answers(eval_dataset, qa_chain)
-        # eval_dataset = pd.read_csv('eval_with_answers.csv')
+        # eval_dataset = pd.read_csv(results_dir+'/eval_with_answers.csv')
         eval_dataset = evaluate_answers(eval_dataset, default_config)
-        log_results(eval_dataset)
+        log_results(eval_dataset, results_dir)
         wandb.finish()
